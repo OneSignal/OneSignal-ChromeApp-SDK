@@ -35,7 +35,7 @@ g("google.payments.inapp.getPurchases",function(a){a.method="getPurchases";h(a)}
 // END
 
 var ONESIGNAL_LOGGING = false;
-var ONESIGNAL_VERSION = 10101;
+var ONESIGNAL_VERSION = 10102;
 var ONESIGNAL_HOST_URL = "https://onesignal.com/api/v1/";
 
 var OneSignal_Init_done = false;
@@ -47,7 +47,7 @@ var OneSignal_current_skus = null;
 
 var OneSignal = {
   log: function(message) {
-    if (ONESIGNAL_LOGGING == true)
+    if (ONESIGNAL_LOGGING)
       console.log(message);
   },
   
@@ -322,7 +322,8 @@ var OneSignalBackground = {
     chrome.gcm.onMessage.addListener(OneSignalBackground.onMessageReceived);
     chrome.notifications.onClicked.addListener(OneSignalBackground.notification_onClicked);
     chrome.notifications.onButtonClicked.addListener(OneSignalBackground.notifiation_buttonClicked);
-    chrome.app.runtime.onLaunched.addListener(OneSignal.appLaunched);
+    if (chrome.app.runtime)
+      chrome.app.runtime.onLaunched.addListener(OneSignal.appLaunched);
     
     chrome.runtime.onConnect.addListener(function(port) {
       if (port.name == "ONESIGNAL_NOTIFICATION_OPENED")

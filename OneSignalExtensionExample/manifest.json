@@ -1,0 +1,17 @@
+{
+  "name": "OneSignal Extension Example",
+  "description": "OneSignal Push Notifications Example Chrome Extension.",
+  "manifest_version": 3,
+  "version": "1.0.1",
+  "background": {
+    "persistent": false,
+    "scripts": ["OneSignal.js", "background.js"]
+  },
+  "browser_action": {
+    "default_title": "OneSignal Example",
+    "default_icon": "OneSignal_icon.png",
+    "default_popup": "ExamplePage.html"
+  },
+  "permissions": ["gcm", "storage", "notifications", "identity"],
+  "icons": { "128": "OneSignal_icon.png" }
+}
