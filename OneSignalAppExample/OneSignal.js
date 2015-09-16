@@ -416,9 +416,11 @@ var OneSignalBackground = {
     });
     
     if (GT_notifications_received[notifiationId].openUrl != null) {
-      chrome.browser.openTab({
-        url: GT_notifications_received[notifiationId].openUrl
-      });
+      var urlObject = {url: GT_notifications_received[notifiationId].openUrl};
+      if (chrome.browser)
+        chrome.browser.openTab(urlObject);
+      else
+        chrome.tabs.create(urlObject);
     }
     
     return true;
