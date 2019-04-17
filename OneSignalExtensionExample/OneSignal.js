@@ -1,7 +1,7 @@
 /**
  * Modified MIT License
  * 
- * Copyright 2015 OneSignal
+ * Copyright 2019 OneSignal
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -114,12 +114,12 @@ var OneSignal = {
   GT_internal_init: function(appId, googleProjectNumber) {
     var afterRegister = function(registrationId) {
       if (registrationId) {
-        OneSignal.log("Registered with GCM:");
+        OneSignal.log("(chrome.instanceID.getToken) Registered with FCM:");
         OneSignal.log(registrationId);
         chrome.storage.local.set({gt_registration_id: registrationId});
       }
       else {
-        OneSignal.log("Error registering with GCM:")
+        OneSignal.log("Error registering with FCM:")
         OneSignal.log(runtime.lastError)
       }
       OneSignal.registerWithOneSignal(appId, registrationId);
@@ -128,7 +128,7 @@ var OneSignal = {
     if (OneSignal_Init_done == false) {
       chrome.storage.local.set({gt_app_id: appId, gt_google_project_number: googleProjectNumber});
       OneSignalBackground.init();
-      chrome.gcm.register([googleProjectNumber], afterRegister);
+      chrome.instanceID.getToken({authorizedEntity: googleProjectNumber, scope: "FCM"}, afterRegister);
     }
     else {
       chrome.storage.local.get("gt_registration_id", function(result) {
