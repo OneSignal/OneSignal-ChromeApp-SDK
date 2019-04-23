@@ -35,7 +35,7 @@ g("google.payments.inapp.getPurchases",function(a){a.method="getPurchases";h(a)}
 // END
 
 var ONESIGNAL_LOGGING = false;
-var ONESIGNAL_VERSION = 10102;
+var ONESIGNAL_VERSION = 10200;
 var ONESIGNAL_HOST_URL = "https://onesignal.com/api/v1/";
 
 var OneSignal_Init_done = false;
