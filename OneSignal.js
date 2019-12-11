@@ -71,29 +71,29 @@ var __OSMessageHelper = {
   // Dictionary of callbacks by type
   // Each element is an array that can have a list of callbacks.
   callbackHash: {},
+  // Dictionary of Ports by type
+  portHash: {},
 
   isOnBackgroundPage: async function() {
-    return await new Promise(function(resolve, _reject) {
+    return await new Promise(function(resolve) {
       chrome.runtime.getBackgroundPage(function(page) {
         resolve(page === window);
       });
     });
   },
 
-  getOrCreateCallbackHashItem(type) {
-    const callbackList = __OSMessageHelper.callbackHash[type];
-    if (callbackList)
-      return callbackList;
-    __OSMessageHelper.callbackHash[type] = [];
-    return __OSMessageHelper.callbackHash[type];
-  },
-
   // type - string callback name
   // callback - function
   addCallback: async function(type, callback) {
     // Background page Context, we can directly fire the callback later when needed
-    if (await __OSMessageHelper.isOnBackgroundPage())
-      __OSMessageHelper.getOrCreateCallbackHashItem(type).push(callback);
+    if (await __OSMessageHelper.isOnBackgroundPage()) {
+      let callbackList = __OSMessageHelper.callbackHash[type];
+      if (!callbackList) {
+        callbackList = [];
+        __OSMessageHelper.callbackHash[type] = callbackList;
+      }
+      callbackList.push(callback);
+    }
     else {
       // Other context, setup a port to fire the callback as soon as it gets a message.
       // chrome.runtime.onConnect will save from the other end.
@@ -109,30 +109,36 @@ var __OSMessageHelper = {
       return;
     
     chrome.runtime.onConnect.addListener(function(port) {
-      __OSMessageHelper.getOrCreateCallbackHashItem(port.name).push(port);
+      let portList = __OSMessageHelper.portHash[port.name];
+      if (!portList) {
+        portList = [];
+        __OSMessageHelper.portHash[port.name] = portList;
+      }
+      portList.push(port);
     });
   },
 
   fireCallbacks: function(type, value) {
+    // Fire any callbacks, these will be on the background page.
     const callbackList = __OSMessageHelper.callbackHash[type];
     if (!callbackList)
       return;
     callbackList.forEach(callback => {
-      if (__OSMessageHelper.isAPort(callback)) {
-        try {
-          callback.postMessage(value);
-        } catch(e) {
-          // Will throw if port is disconnected. Ignore this error.
-          // Port becomes disconnectd if a client page is closed.
-        }
-      }
-      else
         callback(value);
     });
-  },
 
-  isAPort: function(obj) {
-    return typeof obj.postMessage === "function";
+    // Fire message to any ports listening, listeners will be on visible pages
+    const portList = __OSMessageHelper.portHash[type];
+    if (!portList)
+      return;
+    portList.forEach(port => {
+      try {
+        port.postMessage(value);
+      } catch(e) {
+        // Will throw if port is disconnected. Ignore this error.
+        // Port becomes disconnectd if a client page is closed.
+      }
+    });
   }
 };
 __OSMessageHelper.setupBackgroundPagePortConnectListner();
