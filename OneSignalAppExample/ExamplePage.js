@@ -1,7 +1,7 @@
 /**
  * Modified MIT License
  * 
- * Copyright 2015 OneSignal
+ * Copyright 2019 OneSignal
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -53,10 +53,10 @@ function sendTag() {
 }
 
 OneSignal.addListenerForNotificationOpened(function(data) {
-	console.log("Received ONESIGNAL_NOTIFICATION_OPENED:");
-	console.log(data);
+	console.log("Received ONESIGNAL_NOTIFICATION_OPENED:", data);
+	consoleStrValue += "NotificationOpened:data:" + JSON.stringify(data) + "\n\n";
+	document.getElementById("console").innerText = consoleStrValue;
 });
-
 
 window.onload = function() {
   document.getElementById("getIds").onclick = getIds;
