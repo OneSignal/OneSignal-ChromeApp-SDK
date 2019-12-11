@@ -72,8 +72,12 @@ var __OSMessageHelper = {
   // Each element is an array that can have a list of callbacks.
   callbackHash: {},
 
-  isOnBackgroundPage: function() {
-    return chrome.extension.getBackgroundPage() === window
+  isOnBackgroundPage: async function() {
+    return await new Promise(function(resolve, _reject) {
+      chrome.runtime.getBackgroundPage(function(page) {
+        resolve(page === window);
+      });
+    });
   },
 
   getOrCreateCallbackHashItem(type) {
@@ -86,9 +90,9 @@ var __OSMessageHelper = {
 
   // type - string callback name
   // callback - function
-  addCallback: function(type, callback) {
+  addCallback: async function(type, callback) {
     // Background page Context, we can directly fire the callback later when needed
-    if (__OSMessageHelper.isOnBackgroundPage())
+    if (await __OSMessageHelper.isOnBackgroundPage())
       __OSMessageHelper.getOrCreateCallbackHashItem(type).push(callback);
     else {
       // Other context, setup a port to fire the callback as soon as it gets a message.
@@ -100,8 +104,8 @@ var __OSMessageHelper = {
     }
   },
 
-  setupBackgroundPagePortConnectListner: function() {
-    if (!__OSMessageHelper.isOnBackgroundPage())
+  setupBackgroundPagePortConnectListner: async function() {
+    if (!await __OSMessageHelper.isOnBackgroundPage())
       return;
     
     chrome.runtime.onConnect.addListener(function(port) {
