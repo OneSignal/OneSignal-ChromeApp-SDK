@@ -49,7 +49,6 @@ var OneSignal_current_skus = null;
 
 const CALLBACK_GT_IDS_AVAILABLE = "GT_IDS_AVAILABLE";
 const CALLBACK_ONESIGNAL_NOTIFICATION_OPENED = "ONESIGNAL_NOTIFICATION_OPENED";
-const CALLBACK_ONESIGNAL_NOTIFICATION_EXTENDER_SERVICE = "ONESIGNAL_NOTIFICATION_EXTENDER_SERVICE";
 
 var __OneSignalHelper = {
   sendToOneSignalApi: function(url, action, inData, callback) {
@@ -82,8 +81,6 @@ var __OSMessageHelper = {
   callbackHash: {},
   // Dictionary of Ports by type
   portHash: {},
-
-
 
   // type - string callback name
   // callback - function
@@ -396,7 +393,7 @@ var OneSignal = {
   // callback - Must be a async function that return a boolean.
   //            callback can return true to mark the message as processed which will prevent
   //            OneSignal from displaying the notification.
-  addWillProcessMessageReceived: async function(callback) {
+  addWillProcessMessageReceived: async (callback) => {
     if (!await __OneSignalHelper.isOnBackgroundPage())
       throw "OneSignal.addWillProcessMessageReceived is only supported from the background page!";
     OneSignalBackground.willProcessMessageReceivers.push(callback);
@@ -410,17 +407,17 @@ var OneSignalBackground = {
   willProcessMessageReceivers: [],
 
   init: function() {
-    chrome.gcm.onMessage.addListener(OneSignalBackground.onMessageReceived);
-    chrome.notifications.onClicked.addListener(OneSignalBackground.notification_onClicked);
-    chrome.notifications.onButtonClicked.addListener(OneSignalBackground.notifiation_buttonClicked);
+    chrome.gcm.onMessage.addListener(this.onMessageReceived.bind(this));
+    chrome.notifications.onClicked.addListener(this.notification_onClicked.bind(this));
+    chrome.notifications.onButtonClicked.addListener(this.notifiation_buttonClicked.bind(this));
     if (chrome.app.runtime)
       chrome.app.runtime.onLaunched.addListener(OneSignal.appLaunched);
   },
   
   onMessageReceived: async function(message) {
     let didHandleMessage = false;
-    for (let i = 0; i < OneSignalBackground.willProcessMessageReceivers.length; i++) {
-      const callback = OneSignalBackground.willProcessMessageReceivers[i];
+    for (let i = 0; i < this.willProcessMessageReceivers.length; i++) {
+      const callback = this.willProcessMessageReceivers[i];
       didHandleMessage = await callback(message) || didHandleMessage;
     }
     // If any recevied confirmed they processed the payload don't display our notification
