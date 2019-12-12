@@ -49,6 +49,7 @@ var OneSignal_current_skus = null;
 
 const CALLBACK_GT_IDS_AVAILABLE = "GT_IDS_AVAILABLE";
 const CALLBACK_ONESIGNAL_NOTIFICATION_OPENED = "ONESIGNAL_NOTIFICATION_OPENED";
+const CALLBACK_ONESIGNAL_NOTIFICATION_EXTENDER_SERVICE = "ONESIGNAL_NOTIFICATION_EXTENDER_SERVICE";
 
 var __OneSignalHelper = {
   sendToOneSignalApi: function(url, action, inData, callback) {
@@ -64,6 +65,14 @@ var __OneSignalHelper = {
     xhr.open(action, ONESIGNAL_HOST_URL + url);
     xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
     xhr.send(JSON.stringify(inData));
+  },
+
+  isOnBackgroundPage: async function() {
+    return await new Promise(function(resolve) {
+      chrome.runtime.getBackgroundPage(function(page) {
+        resolve(page === window);
+      });
+    });
   }
 };
 
@@ -74,19 +83,13 @@ var __OSMessageHelper = {
   // Dictionary of Ports by type
   portHash: {},
 
-  isOnBackgroundPage: async function() {
-    return await new Promise(function(resolve) {
-      chrome.runtime.getBackgroundPage(function(page) {
-        resolve(page === window);
-      });
-    });
-  },
+
 
   // type - string callback name
   // callback - function
   addCallback: async function(type, callback) {
     // Background page Context, we can directly fire the callback later when needed
-    if (await __OSMessageHelper.isOnBackgroundPage()) {
+    if (await __OneSignalHelper.isOnBackgroundPage()) {
       let callbackList = __OSMessageHelper.callbackHash[type];
       if (!callbackList) {
         callbackList = [];
@@ -105,7 +108,7 @@ var __OSMessageHelper = {
   },
 
   setupBackgroundPagePortConnectListner: async function() {
-    if (!await __OSMessageHelper.isOnBackgroundPage())
+    if (!await __OneSignalHelper.isOnBackgroundPage())
       return;
     
     chrome.runtime.onConnect.addListener(function(port) {
@@ -387,6 +390,16 @@ var OneSignal = {
         );
       }
     });
+  },
+
+  // Allows getting raw payload from FCM to process it before it displays as a notification.
+  // callback - Must be a async function that return a boolean.
+  //            callback can return true to mark the message as processed which will prevent
+  //            OneSignal from displaying the notification.
+  addWillProcessMessageReceived: async function(callback) {
+    if (!await __OneSignalHelper.isOnBackgroundPage())
+      throw "OneSignal.addWillProcessMessageReceived is only supported from the background page!";
+    OneSignalBackground.willProcessMessageReceivers.push(callback);
   }
 };
 
@@ -394,7 +407,8 @@ var GT_notifications_opened = [];
 var GT_notifications_received = {};
 
 var OneSignalBackground = {
-  
+  willProcessMessageReceivers: [],
+
   init: function() {
     chrome.gcm.onMessage.addListener(OneSignalBackground.onMessageReceived);
     chrome.notifications.onClicked.addListener(OneSignalBackground.notification_onClicked);
@@ -403,7 +417,20 @@ var OneSignalBackground = {
       chrome.app.runtime.onLaunched.addListener(OneSignal.appLaunched);
   },
   
-  onMessageReceived: function(message) {
+  onMessageReceived: async function(message) {
+    let didHandleMessage = false;
+    for (let i = 0; i < OneSignalBackground.willProcessMessageReceivers.length; i++) {
+      const callback = OneSignalBackground.willProcessMessageReceivers[i];
+      didHandleMessage = await callback(message) || didHandleMessage;
+    }
+    // If any recevied confirmed they processed the payload don't display our notification
+    if (didHandleMessage)
+      return;
+
+    // If no message body omit displaying a notification
+    if (!message.data.alert)
+       return;
+
     var title = message.data.title;
     if (title == null)
       title = chrome.runtime.getManifest().name;
@@ -428,12 +455,12 @@ var OneSignalBackground = {
       additionalData: customJSON.a
     };
     
-    var chromeNotification = {
-        title: title,
-        iconUrl: iconUrl,
-        type: 'basic',
-        message: message.data.alert
-      };
+    let chromeNotification = {
+      title: title,
+      message: message.data.alert,
+      iconUrl: iconUrl,
+      type: 'basic'
+    };
     
     if (message.data.bicon != null) {
       chromeNotification.type = "image";
