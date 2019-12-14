@@ -37,9 +37,10 @@
 g("google.payments.inapp.getPurchases",function(a){a.method="getPurchases";h(a)});g("google.payments.inapp.getSkuDetails",function(a){a.method="getSkuDetails";h(a)}); })(); 
 // END
 
+const ONESIGNAL_VERSION = 10300;
+const ONESIGNAL_HOST_URL = "https://onesignal.com/api/v1/";
+
 var ONESIGNAL_LOGGING = false;
-var ONESIGNAL_VERSION = 10200;
-var ONESIGNAL_HOST_URL = "https://onesignal.com/api/v1/";
 
 var OneSignal_Init_done = false;
 
