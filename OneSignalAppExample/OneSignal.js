@@ -28,31 +28,32 @@
  
 // Requires Chrome version 35+
 
+// Documenation on Chrome Extension messages
+// https://developer.chrome.com/extensions/messaging
+
 
 // Google's buy.js START:
 (function() { var f=this,g=function(a,d){var c=a.split("."),b=window||f;c[0]in b||!b.execScript||b.execScript("var "+c[0]);for(var e;c.length&&(e=c.shift());)c.length||void 0===d?b=b[e]?b[e]:b[e]={}:b[e]=d};var h=function(a){var d=chrome.runtime.connect("nmmhkkegccagdldgiimedpiccmgmieda",{}),c=!1;d.onMessage.addListener(function(b){c=!0;"response"in b&&!("errorType"in b.response)?a.success&&a.success(b):a.failure&&a.failure(b)});d.onDisconnect.addListener(function(){!c&&a.failure&&a.failure({request:{},response:{errorType:"INTERNAL_SERVER_ERROR"}})});d.postMessage(a)};g("google.payments.inapp.buy",function(a){a.method="buy";h(a)});
 g("google.payments.inapp.getPurchases",function(a){a.method="getPurchases";h(a)});g("google.payments.inapp.getSkuDetails",function(a){a.method="getSkuDetails";h(a)}); })(); 
 // END
 
+const ONESIGNAL_VERSION = 10300;
+const ONESIGNAL_HOST_URL = "https://onesignal.com/api/v1/";
+
 var ONESIGNAL_LOGGING = false;
-var ONESIGNAL_VERSION = 10200;
-var ONESIGNAL_HOST_URL = "https://onesignal.com/api/v1/";
 
 var OneSignal_Init_done = false;
 
 var tagsToSendOnRegister = null;
 
-var OneSignal_ids_available_port = null;
 var OneSignal_current_skus = null;
 
-var OneSignal = {
-  log: function(message) {
-    if (ONESIGNAL_LOGGING)
-      console.log(message);
-  },
-  
+const CALLBACK_GT_IDS_AVAILABLE = "GT_IDS_AVAILABLE";
+const CALLBACK_ONESIGNAL_NOTIFICATION_OPENED = "ONESIGNAL_NOTIFICATION_OPENED";
+
+var __OneSignalHelper = {
   sendToOneSignalApi: function(url, action, inData, callback) {
-    var xhr = new XMLHttpRequest();
+    const xhr = new XMLHttpRequest();
     xhr.onerror = function() {
       OneSignal.log("Error connecting to OneSignal servers:" + url)
     }
@@ -64,6 +65,89 @@ var OneSignal = {
     xhr.open(action, ONESIGNAL_HOST_URL + url);
     xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
     xhr.send(JSON.stringify(inData));
+  },
+
+  isOnBackgroundPage: async function() {
+    return await new Promise(function(resolve) {
+      chrome.runtime.getBackgroundPage(function(page) {
+        resolve(page === window);
+      });
+    });
+  }
+};
+
+var __OSMessageHelper = {
+  // Dictionary of callbacks by type
+  // Each element is an array that can have a list of callbacks.
+  callbackHash: {},
+  // Dictionary of Ports by type
+  portHash: {},
+
+  // type - string callback name
+  // callback - function
+  addCallback: async function(type, callback) {
+    // Background page Context, we can directly fire the callback later when needed
+    if (await __OneSignalHelper.isOnBackgroundPage()) {
+      let callbackList = __OSMessageHelper.callbackHash[type];
+      if (!callbackList) {
+        callbackList = [];
+        __OSMessageHelper.callbackHash[type] = callbackList;
+      }
+      callbackList.push(callback);
+    }
+    else {
+      // Other context, setup a port to fire the callback as soon as it gets a message.
+      // chrome.runtime.onConnect will save from the other end.
+      const port = chrome.runtime.connect({name: type});
+      port.onMessage.addListener(function(msg) {
+        callback(msg);
+      });
+    }
+  },
+
+  setupBackgroundPagePortConnectListner: async function() {
+    if (!await __OneSignalHelper.isOnBackgroundPage())
+      return;
+    
+    chrome.runtime.onConnect.addListener(function(port) {
+      let portList = __OSMessageHelper.portHash[port.name];
+      if (!portList) {
+        portList = [];
+        __OSMessageHelper.portHash[port.name] = portList;
+      }
+      portList.push(port);
+    });
+  },
+
+  fireCallbacks: function(type, value) {
+    // Fire any callbacks, these will be on the background page.
+    const callbackList = __OSMessageHelper.callbackHash[type];
+    if (!callbackList)
+      return;
+    callbackList.forEach(callback => {
+        callback(value);
+    });
+
+    // Fire message to any ports listening, listeners will be on visible pages
+    const portList = __OSMessageHelper.portHash[type];
+    if (!portList)
+      return;
+    portList.forEach(port => {
+      try {
+        port.postMessage(value);
+      } catch(e) {
+        // Will throw if port is disconnected. Ignore this error.
+        // Port becomes disconnectd if a client page is closed.
+      }
+    });
+  }
+};
+__OSMessageHelper.setupBackgroundPagePortConnectListner();
+
+var OneSignal = {
+  log: function(message) {
+    if (ONESIGNAL_LOGGING)
+      console.log(message);
   },
   
   getUserId: function(callback) {
@@ -82,19 +166,21 @@ var OneSignal = {
         requestUrl = 'players/' + result["gt_player_id"] + '/on_session';
       
       OneSignal.getUserId(function(userId) {
-        var jsonData = {app_id: appId,
-                device_type: 4,
-                identifier: registrationId,
-                language: chrome.i18n.getUILanguage ? chrome.i18n.getUILanguage().substring(0, 2) : 'en',
-                timezone: (new Date().getTimezoneOffset() * -60),
-                device_model: navigator.platform + " Chrome",
-                device_os: navigator.appVersion.match(/Chrome\/(.*?) /)[1],
-                sdk: ONESIGNAL_VERSION};
+        var jsonData = {
+          app_id: appId,
+          device_type: 4,
+          identifier: registrationId,
+          language: chrome.i18n.getUILanguage ? chrome.i18n.getUILanguage().substring(0, 2) : 'en',
+          timezone: (new Date().getTimezoneOffset() * -60),
+          device_model: navigator.platform + " Chrome",
+          device_os: navigator.appVersion.match(/Chrome\/(.*?) /)[1],
+          sdk: ONESIGNAL_VERSION
+        };
         
         if (userId != null)
           jsonData["ad_id"] = userId;
         
-        OneSignal.sendToOneSignalApi(requestUrl, 'POST', jsonData,
+        __OneSignalHelper.sendToOneSignalApi(requestUrl, 'POST', jsonData,
           function registeredCallback(response) {
             var responseJSON = JSON.parse(response);
             chrome.storage.local.set({gt_player_id: responseJSON.id});
@@ -103,8 +189,11 @@ var OneSignal = {
             
             if (tagsToSendOnRegister != null)
               OneSignal.sendTags(tagsToSendOnRegister);
-            if (OneSignal_ids_available_port != null)
-              OneSignal_ids_available_port.postMessage({userId: result["gt_player_id"], registrationId: responseJSON.id});
+
+            __OSMessageHelper.fireCallbacks(
+              CALLBACK_GT_IDS_AVAILABLE,
+              { userId: responseJSON.id, registrationId: registrationId }
+            );
           }
         );
       });
@@ -218,7 +307,7 @@ var OneSignal = {
                             purchases: jsonPurchases};
             if (existing)
               jsonData.existing = existing;
-            OneSignal.sendToOneSignalApi("players/" + result["gt_player_id"] + "/on_purchase", 'POST', jsonData,
+            __OneSignalHelper.sendToOneSignalApi("players/" + result["gt_player_id"] + "/on_purchase", 'POST', jsonData,
               function registeredCallback(response) {
                 var responseJSON = JSON.parse(response);
                 if (responseJSON.success == true) {
@@ -246,7 +335,7 @@ var OneSignal = {
   sendTags: function(jsonPair) {
     chrome.storage.local.get({"gt_player_id": null, "gt_app_id": null}, function(result) {
       if (result["gt_player_id"] != null)
-        OneSignal.sendToOneSignalApi("players/" + result["gt_player_id"], "PUT", {app_id: result["gt_app_id"], tags: jsonPair});
+        __OneSignalHelper.sendToOneSignalApi("players/" + result["gt_player_id"], "PUT", {app_id: result["gt_app_id"], tags: jsonPair});
       else {
         if (tagsToSendOnRegister == null)
           tagsToSendOnRegister = jsonPair;
@@ -270,68 +359,76 @@ var OneSignal = {
   },
   
   addListenerForNotificationOpened: function(callback) {
-    var port = chrome.runtime.connect({name: "ONESIGNAL_NOTIFICATION_OPENED"});
-    port.onMessage.addListener(function(msg) {
-      callback(msg);
-    });
+    __OSMessageHelper.addCallback(CALLBACK_ONESIGNAL_NOTIFICATION_OPENED, callback);
   },
   
   getIdsAvailable: function(callback) {
     chrome.storage.local.get({"gt_player_id": null, "gt_registration_id": null}, function(result) {
-      if (result["gt_player_id"] != null)
-        callback({userId: result["gt_player_id"], registrationId: result["gt_registration_id"]});  
-      if (result["gt_registration_id"] != null) {
-        var port = chrome.runtime.connect({name: "GT_IDS_AVAILABLE"});
-        port.onMessage.addListener(function(msg) {
-          callback(msg);
-        });
+      // If both ids are available fire callback right away
+      if (result["gt_player_id"] && result["gt_registration_id"]) {
+        callback({userId: result["gt_player_id"], registrationId: result["gt_registration_id"]});
+        return;
       }
+      // Save callback, it should fire later as we don't have both ids.
+      __OSMessageHelper.addCallback(CALLBACK_GT_IDS_AVAILABLE, callback);
+      
+      // Still fire with just the user / player id if we have one
+      if (result["gt_player_id"])
+        callback({userId: result["gt_player_id"], registrationId: null});
     });
   },
   
   getTags: function(callback) {
     chrome.storage.local.get("gt_player_id", function(result) {
       if (result["gt_player_id"] != null) {
-        OneSignal.sendToOneSignalApi("players/" + result["gt_player_id"], 'GET', {},
+        __OneSignalHelper.sendToOneSignalApi("players/" + result["gt_player_id"], 'GET', {},
           function registeredCallback(response) {
           callback(JSON.parse(response).tags);
           }
         );
       }
     });
+  },
+
+  // Allows getting raw payload from FCM to process it before it displays as a notification.
+  // callback - Must be a async function that return a boolean.
+  //            callback can return true to mark the message as processed which will prevent
+  //            OneSignal from displaying the notification.
+  addWillProcessMessageReceived: async (callback) => {
+    if (!await __OneSignalHelper.isOnBackgroundPage())
+      throw "OneSignal.addWillProcessMessageReceived is only supported from the background page!";
+    OneSignalBackground.willProcessMessageReceivers.push(callback);
   }
 };
-
-chrome.runtime.onConnect.addListener(function(port) {
-  if (port.name == "GT_IDS_AVAILABLE")
-      OneSignal_ids_available_port = port;
-});
-
-
-
-
 
 var GT_notifications_opened = [];
 var GT_notifications_received = {};
 
-var ONESIGNAL_NOTIFICATION_OPENED_port = null;
-
 var OneSignalBackground = {
-  
+  willProcessMessageReceivers: [],
+
   init: function() {
-    chrome.gcm.onMessage.addListener(OneSignalBackground.onMessageReceived);
-    chrome.notifications.onClicked.addListener(OneSignalBackground.notification_onClicked);
-    chrome.notifications.onButtonClicked.addListener(OneSignalBackground.notifiation_buttonClicked);
+    chrome.gcm.onMessage.addListener(this.onMessageReceived.bind(this));
+    chrome.notifications.onClicked.addListener(this.notification_onClicked.bind(this));
+    chrome.notifications.onButtonClicked.addListener(this.notifiation_buttonClicked.bind(this));
     if (chrome.app.runtime)
       chrome.app.runtime.onLaunched.addListener(OneSignal.appLaunched);
-    
-    chrome.runtime.onConnect.addListener(function(port) {
-      if (port.name == "ONESIGNAL_NOTIFICATION_OPENED")
-        ONESIGNAL_NOTIFICATION_OPENED_port = port;
-    });
   },
   
-  onMessageReceived: function(message) {
+  onMessageReceived: async function(message) {
+    let didHandleMessage = false;
+    for (let i = 0; i < this.willProcessMessageReceivers.length; i++) {
+      const callback = this.willProcessMessageReceivers[i];
+      didHandleMessage = await callback(message) || didHandleMessage;
+    }
+    // If any recevied confirmed they processed the payload don't display our notification
+    if (didHandleMessage)
+      return;
+
+    // If no message body omit displaying a notification
+    if (!message.data.alert)
+       return;
+
     var title = message.data.title;
     if (title == null)
       title = chrome.runtime.getManifest().name;
@@ -356,12 +453,12 @@ var OneSignalBackground = {
       additionalData: customJSON.a
     };
     
-    var chromeNotification = {
-        title: title,
-        iconUrl: iconUrl,
-        type: 'basic',
-        message: message.data.alert
-      };
+    let chromeNotification = {
+      title: title,
+      message: message.data.alert,
+      iconUrl: iconUrl,
+      type: 'basic'
+    };
     
     if (message.data.bicon != null) {
       chromeNotification.type = "image";
@@ -403,15 +500,11 @@ var OneSignalBackground = {
       return false;
     
     GT_notifications_opened.push(notifiationId);
-    
-    if (ONESIGNAL_NOTIFICATION_OPENED_port != null) {
-      try { // Port may have closed
-        ONESIGNAL_NOTIFICATION_OPENED_port.postMessage(jsonToSend);
-      } catch(err) {}
-    }
-    
+
+    __OSMessageHelper.fireCallbacks(CALLBACK_ONESIGNAL_NOTIFICATION_OPENED, jsonToSend);
+        
     chrome.storage.local.get({"gt_player_id": null, "gt_app_id": null}, function(result) {
-      OneSignal.sendToOneSignalApi("notifications/" + notifiationId, "PUT",
+      __OneSignalHelper.sendToOneSignalApi("notifications/" + notifiationId, "PUT",
         {app_id: result["gt_app_id"], player_id: result["gt_player_id"], opened: true});
     });
     
@@ -436,5 +529,5 @@ var OneSignalBackground = {
     notificationData.actionSelected = GT_notifications_received[notifiationId].actionButtons[buttonIndex].id;
     if (OneSignalBackground.notificationOpened(notifiationId, notificationData))
       GT_notifications_received[notifiationId] = null;
-  }
+  },
 };
