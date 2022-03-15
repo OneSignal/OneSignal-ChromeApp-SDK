@@ -1,5 +1,6 @@
+# This SDK is no longer being updated and is slated for archival
+
 OneSignal Chrome App Push Notification Plugin
-====================================
 
 OneSignal is a free push notification service for Chrome and mobile apps. This plugin makes it easy to integrate your Chrome App or Extension with OneSignal.
 
